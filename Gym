@@ -9,11 +9,6 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    
-    <!-- Firebase SDKs -->
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
@@ -28,20 +23,12 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // --- FIREBASE CONFIGURATION ---
-        const firebaseConfig = JSON.parse(__firebase_config);
-        const app = firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
-        const auth = firebase.auth();
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'gym-flow-app';
-
         const Icon = ({ name, size = 22, className = "" }) => {
             useEffect(() => { if (window.lucide) window.lucide.createIcons(); }, [name]);
             return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
         };
 
         const App = () => {
-            const [user, setUser] = useState(null);
             const [activeTab, setActiveTab] = useState('plan'); 
             const [selectedExercise, setSelectedExercise] = useState(null);
             const [workoutLogs, setWorkoutLogs] = useState([]);
@@ -53,76 +40,30 @@
             const [isScanning, setIsScanning] = useState(false);
             const [dailyStrategy, setDailyStrategy] = useState(null);
             const [isGeneratingStrategy, setIsGeneratingStrategy] = useState(false);
-            const [setFeedback, setSetFeedback] = useState({});
-            const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(null);
 
-            const geminiKey = "AIzaSyD1BK66SyNIHOmwqCr0NrZ0VptE0aXEyo4"; // Paste Gemini Key here
+            // --- ADD YOUR KEY HERE ---
+            const geminiKey = "AIzaSyD1BK66SyNIHOmwqCr0NrZ0VptE0aXEyo4"; 
 
-            // Auth Logic
+            // Load from LocalStorage (Simple History)
             useEffect(() => {
-                const initAuth = async () => {
-                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                        await auth.signInWithCustomToken(__initial_auth_token);
-                    } else {
-                        await auth.signInAnonymously();
-                    }
-                };
-                initAuth();
-                const unsubscribe = auth.onAuthStateChanged(u => setUser(u));
-                return () => unsubscribe();
+                const savedLogs = localStorage.getItem('gym_logs');
+                const savedProfile = localStorage.getItem('gym_profile');
+                if (savedLogs) setWorkoutLogs(JSON.parse(savedLogs));
+                if (savedProfile) {
+                    const profile = JSON.parse(savedProfile);
+                    setBodyWeight(profile.bodyWeight || "62");
+                    setDailyChecklist(profile.dailyChecklist || { protein: false, sleep: false, water: false, stretch: false });
+                }
             }, []);
 
-            // Data Sync Logic
+            // Save to LocalStorage whenever things change
             useEffect(() => {
-                if (!user) return;
-
-                // Sync User Profile (Weight & Checklist)
-                const profileRef = db.doc(`artifacts/${appId}/users/${user.uid}/profile/data`);
-                const unsubProfile = profileRef.onSnapshot(doc => {
-                    if (doc.exists) {
-                        const data = doc.data();
-                        if (data.bodyWeight) setBodyWeight(data.bodyWeight);
-                        if (data.dailyChecklist) setDailyChecklist(data.dailyChecklist);
-                    }
-                });
-
-                // Sync Workout Logs
-                const logsRef = db.collection(`artifacts/${appId}/users/${user.uid}/logs`);
-                const unsubLogs = logsRef.onSnapshot(snapshot => {
-                    const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    // Simple sort by timestamp in memory (Rule 2)
-                    setWorkoutLogs(items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
-                }, (err) => console.error("Logs error:", err));
-
-                return () => { unsubProfile(); unsubLogs(); };
-            }, [user]);
-
-            const updateProfile = async (updates) => {
-                if (!user) return;
-                await db.doc(`artifacts/${appId}/users/${user.uid}/profile/data`).set(updates, { merge: true });
-            };
-
-            const addLog = async (exercise) => {
-                if (!user) return;
-                await db.collection(`artifacts/${appId}/users/${user.uid}/logs`).add({
-                    exercise: exercise.title,
-                    weight: '',
-                    reps: '',
-                    timestamp: Date.now()
-                });
-            };
-
-            const updateLog = async (id, field, value) => {
-                if (!user) return;
-                await db.doc(`artifacts/${appId}/users/${user.uid}/logs/${id}`).update({ [field]: value });
-            };
-
-            const deleteLog = async (id) => {
-                if (!user) return;
-                await db.doc(`artifacts/${appId}/users/${user.uid}/logs/${id}`).delete();
-            };
+                localStorage.setItem('gym_logs', JSON.stringify(workoutLogs));
+                localStorage.setItem('gym_profile', JSON.stringify({ bodyWeight, dailyChecklist }));
+            }, [workoutLogs, bodyWeight, dailyChecklist]);
 
             const fetchGemini = async (prompt, isJson = false, base64Image = null) => {
+                if (!geminiKey) return "Please add your API Key to the code.";
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${geminiKey}`;
                 const parts = [{ text: prompt }];
                 if (base64Image) parts.push({ inlineData: { mimeType: "image/png", data: base64Image } });
@@ -160,7 +101,7 @@
                     try {
                         const res = await fetchGemini("Identify gym machine, muscles targeted, and 3 steps.", false, base64Data);
                         setVisionResult(res);
-                    } catch (e) { setVisionResult("Error."); }
+                    } catch (e) { setVisionResult("Error scanning image."); }
                     setIsScanning(false);
                 };
                 reader.readAsDataURL(file);
@@ -172,14 +113,12 @@
                 { id: 'treadmill', title: 'Treadmill', target: 'Cardio', visual: 'https://images.unsplash.com/photo-1538805060514-97d9cc17730c?w=400', details: '3% Incline walk.' }
             ];
 
-            if (!user) return <div className="h-screen flex items-center justify-center font-black text-slate-300 animate-pulse uppercase tracking-widest text-xs">Connecting to Cloud...</div>;
-
             return (
                 <div className="min-h-screen pb-32">
                     <header className="bg-white px-6 pt-12 pb-6 sticky top-0 z-40 border-b border-slate-100 flex justify-between items-center">
                         <div>
-                            <h1 className="text-2xl font-black italic text-slate-900">GYMFLOW</h1>
-                            <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">{bodyWeight}kg • Build Phase</p>
+                            <h1 className="text-2xl font-black italic text-slate-900 leading-none">GYMFLOW</h1>
+                            <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mt-1">{bodyWeight}kg • Build Phase</p>
                         </div>
                         <div className="flex gap-2">
                             <button onClick={handleMeal} className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100">
@@ -203,29 +142,34 @@
                             </div>
                         )}
 
+                        {mealSuggestion && (
+                            <div className="bg-blue-600 text-white p-6 rounded-[32px] animate-in">
+                                <div className="flex justify-between mb-2">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-blue-200">✨ Meal Idea</span>
+                                    <button onClick={() => setMealSuggestion(null)}><Icon name="x" size={18} /></button>
+                                </div>
+                                <h4 className="font-bold">{mealSuggestion.title}</h4>
+                                <p className="text-xs text-blue-100 mb-2">{mealSuggestion.description}</p>
+                                <span className="text-[10px] font-black bg-white/20 px-2 py-1 rounded-md">{mealSuggestion.macros}</span>
+                            </div>
+                        )}
+
                         {activeTab === 'plan' && (
                             <div className="space-y-6 animate-in">
                                 <div className="bg-white p-6 rounded-[32px] shadow-sm border border-slate-100">
                                     <div className="flex justify-between items-end mb-6">
                                         <div>
                                             <h3 className="font-black text-xl">Daily Plan</h3>
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Saved to Cloud</p>
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest italic">Local History Active</p>
                                         </div>
                                         <div className="text-right">
-                                            <input type="number" value={bodyWeight} onChange={(e) => {
-                                                setBodyWeight(e.target.value);
-                                                updateProfile({ bodyWeight: e.target.value });
-                                            }} className="text-3xl font-black text-blue-600 w-20 text-right outline-none bg-transparent" />
+                                            <input type="number" value={bodyWeight} onChange={(e) => setBodyWeight(e.target.value)} className="text-3xl font-black text-blue-600 w-20 text-right outline-none bg-transparent" />
                                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">KG</p>
                                         </div>
                                     </div>
                                     <div className="space-y-2">
                                         {['protein', 'water', 'sleep', 'stretch'].map(k => (
-                                            <button key={k} onClick={() => {
-                                                const newChecklist = {...dailyChecklist, [k]: !dailyChecklist[k]};
-                                                setDailyChecklist(newChecklist);
-                                                updateProfile({ dailyChecklist: newChecklist });
-                                            }} className={`w-full p-4 rounded-2xl border flex justify-between items-center ${dailyChecklist[k] ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-white border-slate-100'}`}>
+                                            <button key={k} onClick={() => setDailyChecklist(prev => ({...prev, [k]: !prev[k]}))} className={`w-full p-4 rounded-2xl border flex justify-between items-center ${dailyChecklist[k] ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-white border-slate-100'}`}>
                                                 <span className="text-sm font-bold capitalize">{k} Target</span>
                                                 {dailyChecklist[k] ? <Icon name="check-circle-2" className="text-green-500" /> : <div className="w-5 h-5 rounded-full border-2 border-slate-100" />}
                                             </button>
@@ -236,17 +180,17 @@
                                 <div className="bg-slate-900 p-8 rounded-[32px] text-white relative overflow-hidden">
                                     <div className="relative z-10">
                                         <div className="flex justify-between mb-4">
-                                            <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">✨ Daily Strategy</span>
-                                            <button onClick={handleStrategy} className="bg-blue-600 p-2 rounded-full">
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">✨ AI Strategy</span>
+                                            <button onClick={handleStrategy} className="bg-blue-600 p-2 rounded-full active:scale-90 transition">
                                                 {isGeneratingStrategy ? <Icon name="loader-2" size={16} className="animate-spin" /> : <Icon name="zap" size={16} />}
                                             </button>
                                         </div>
                                         {dailyStrategy ? (
                                             <div>
-                                                <p className="font-bold text-lg mb-2">"{dailyStrategy.focus}"</p>
+                                                <p className="font-bold text-lg mb-2 italic">"{dailyStrategy.focus}"</p>
                                                 {dailyStrategy.bullets.map((b, i) => <p key={i} className="text-xs text-slate-400 mb-1">• {b}</p>)}
                                             </div>
-                                        ) : <p className="text-xs text-slate-500">Generate today's strategy...</p>}
+                                        ) : <p className="text-xs text-slate-500">Tap the bolt for today's AI plan.</p>}
                                     </div>
                                 </div>
                             </div>
@@ -255,8 +199,8 @@
                         {activeTab === 'guide' && (
                             <div className="space-y-3 animate-in">
                                 {exercises.map(ex => (
-                                    <button key={ex.id} onClick={() => setSelectedExercise(ex)} className="w-full bg-white p-4 rounded-[24px] border border-slate-100 flex items-center gap-4 text-left">
-                                        <img src={ex.visual} className="w-14 h-14 rounded-xl object-cover grayscale" />
+                                    <button key={ex.id} onClick={() => setSelectedExercise(ex)} className="w-full bg-white p-4 rounded-[24px] border border-slate-100 flex items-center gap-4 text-left group">
+                                        <img src={ex.visual} className="w-14 h-14 rounded-xl object-cover grayscale group-hover:grayscale-0 transition-all" />
                                         <div className="flex-1">
                                             <h4 className="font-black text-sm">{ex.title}</h4>
                                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{ex.target}</p>
@@ -269,21 +213,25 @@
 
                         {activeTab === 'tracker' && (
                             <div className="space-y-4 animate-in">
-                                {workoutLogs.length === 0 ? <p className="text-center text-slate-400 py-10">No active sets recorded.</p> : 
-                                    workoutLogs.map(log => (
-                                        <div key={log.id} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm animate-in">
+                                <div className="flex justify-between items-center">
+                                    <h3 className="font-black text-xl">Recent History</h3>
+                                    <button onClick={() => { if(confirm('Clear all logs?')) setWorkoutLogs([]) }} className="text-[10px] font-black text-red-400 uppercase">Clear</button>
+                                </div>
+                                {workoutLogs.length === 0 ? <p className="text-center text-slate-400 py-10 text-xs font-bold uppercase tracking-widest">No logs found.</p> : 
+                                    workoutLogs.map((log, idx) => (
+                                        <div key={idx} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm">
                                             <div className="flex justify-between items-center mb-4">
                                                 <h4 className="font-black text-sm">{log.exercise}</h4>
-                                                <button onClick={() => deleteLog(log.id)} className="text-slate-200 hover:text-red-400"><Icon name="trash-2" size={16} /></button>
+                                                <span className="text-[9px] font-bold text-slate-300 uppercase">{new Date(log.timestamp).toLocaleDateString()}</span>
                                             </div>
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div className="bg-slate-50 p-3 rounded-xl">
-                                                    <label className="text-[8px] font-black text-slate-400 uppercase">KG</label>
-                                                    <input type="number" value={log.weight} onChange={e => updateLog(log.id, 'weight', e.target.value)} className="w-full bg-transparent font-black outline-none" />
+                                                    <label className="text-[8px] font-black text-slate-400 uppercase">Weight</label>
+                                                    <div className="font-black">{log.weight} KG</div>
                                                 </div>
                                                 <div className="bg-slate-50 p-3 rounded-xl">
                                                     <label className="text-[8px] font-black text-slate-400 uppercase">Reps</label>
-                                                    <input type="number" value={log.reps} onChange={e => updateLog(log.id, 'reps', e.target.value)} className="w-full bg-transparent font-black outline-none" />
+                                                    <div className="font-black">{log.reps}</div>
                                                 </div>
                                             </div>
                                         </div>
@@ -294,27 +242,35 @@
                     </main>
 
                     <nav className="fixed bottom-6 left-6 right-6 bg-[#0F172A] rounded-[40px] px-8 py-5 shadow-2xl flex justify-between items-center z-50">
-                        <button onClick={() => setActiveTab('plan')} className={activeTab === 'plan' ? 'text-blue-400' : 'text-slate-500'}><Icon name="layout-grid" /></button>
-                        <button onClick={() => setActiveTab('guide')} className={activeTab === 'guide' ? 'text-blue-400' : 'text-slate-500'}><Icon name="dumbbell" /></button>
-                        <button onClick={() => setActiveTab('tracker')} className={activeTab === 'tracker' ? 'text-blue-400' : 'text-slate-500'}><Icon name="history" /></button>
+                        <button onClick={() => setActiveTab('plan')} className={activeTab === 'plan' ? 'text-blue-400 scale-110' : 'text-slate-500'}><Icon name="layout-grid" /></button>
+                        <button onClick={() => setActiveTab('guide')} className={activeTab === 'guide' ? 'text-blue-400 scale-110' : 'text-slate-500'}><Icon name="dumbbell" /></button>
+                        <button onClick={() => setActiveTab('tracker')} className={activeTab === 'tracker' ? 'text-blue-400 scale-110' : 'text-slate-500'}><Icon name="history" /></button>
                     </nav>
 
                     {selectedExercise && (
                         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] p-4 flex items-center justify-center">
-                            <div className="bg-white rounded-[40px] w-full max-w-md overflow-hidden shadow-2xl">
+                            <div className="bg-white rounded-[40px] w-full max-w-md overflow-hidden shadow-2xl animate-in">
                                 <div className="h-48 relative">
                                     <img src={selectedExercise.visual} className="w-full h-full object-cover" />
                                     <button onClick={() => setSelectedExercise(null)} className="absolute top-4 right-4 bg-black/40 text-white p-2 rounded-full"><Icon name="x" size={16} /></button>
                                 </div>
                                 <div className="p-8">
                                     <h2 className="text-2xl font-black italic">{selectedExercise.title}</h2>
-                                    <p className="text-blue-600 font-bold text-xs uppercase mb-4 tracking-widest">{selectedExercise.target}</p>
-                                    <div className="bg-slate-50 p-4 rounded-2xl mb-6 text-xs text-slate-600 italic">"{selectedExercise.details}"</div>
+                                    <p className="text-blue-600 font-bold text-xs uppercase mb-4">{selectedExercise.target}</p>
+                                    
+                                    <div className="grid grid-cols-2 gap-4 mb-6">
+                                        <input id="w-input" type="number" placeholder="Weight" className="p-4 bg-slate-50 rounded-2xl outline-none font-bold" />
+                                        <input id="r-input" type="number" placeholder="Reps" className="p-4 bg-slate-50 rounded-2xl outline-none font-bold" />
+                                    </div>
+
                                     <button onClick={() => {
-                                        addLog(selectedExercise);
+                                        const w = document.getElementById('w-input').value;
+                                        const r = document.getElementById('r-input').value;
+                                        if(!w || !r) return;
+                                        setWorkoutLogs([{ exercise: selectedExercise.title, weight: w, reps: r, timestamp: Date.now() }, ...workoutLogs]);
                                         setSelectedExercise(null);
                                         setActiveTab('tracker');
-                                    }} className="w-full bg-blue-600 text-white py-4 rounded-3xl font-black text-xs uppercase tracking-widest active:scale-95 transition shadow-lg shadow-blue-200">Track Machine</button>
+                                    }} className="w-full bg-blue-600 text-white py-4 rounded-3xl font-black text-xs uppercase tracking-widest shadow-lg shadow-blue-200">Save Set</button>
                                 </div>
                             </div>
                         </div>
