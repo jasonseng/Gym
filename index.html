@@ -78,7 +78,8 @@ const App = () => {
     const day = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(new Date());
     const focus = weeklySplit[day];
     
-    const prompt = `User is 36M, 176cm, 62kg. Today's focus is: ${focus}. Create a 4-exercise workout session. For each exercise include: name, targeted reps/sets, and one specific "Pro Tip" for someone with their stats. Return as JSON: {"sessionName": "string", "exercises": [{"name": "string", "reps": "string", "sets": "string", "tip": "string"}]}`;
+    // Updated prompt to be aware of the user's specific equipment list
+    const prompt = `User is 36M, 176cm, 62kg. Today's focus is: ${focus}. Create a 4-exercise workout session using only: Smith Machine, Dumbbells, Cable Machine, LifeFitness Chest Press, Lat Pulldown, Stair Climber. Return as JSON: {"sessionName": "string", "exercises": [{"name": "string", "reps": "string", "sets": "string", "tip": "string"}]}`;
 
     try {
       const result = await fetchWithRetry(
@@ -149,17 +150,23 @@ const App = () => {
     reader.readAsDataURL(file);
   };
 
+  // Updated to match the photos provided previously
   const exerciseLibrary = [
-    { id: 'smith-squat', title: 'Smith Machine Squat', target: 'Quads/Glutes', visual: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400' },
-    { id: 'chest-press', title: 'Chest Press', target: 'Chest/Triceps', visual: 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=400' },
-    { id: 'lat-pulldown', title: 'Lat Pulldown', target: 'Back/Biceps', visual: 'https://images.unsplash.com/photo-1605296867304-46d5465a13f1?w=400' },
-    { id: 'leg-ext', title: 'Leg Extension', target: 'Quads', visual: 'https://images.unsplash.com/photo-1591504770175-6029731666e1?w=400' }
+    { id: 'smith-squat', title: 'Smith Machine Squat', target: 'Legs', visual: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400' },
+    { id: 'chest-press', title: 'LifeFitness Chest Press', target: 'Push', visual: 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=400' },
+    { id: 'lat-pulldown', title: 'Lat Pulldown', target: 'Pull', visual: 'https://images.unsplash.com/photo-1605296867304-46d5465a13f1?w=400' },
+    { id: 'smith-ohp', title: 'Smith Overhead Press', target: 'Push', visual: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=400' },
+    { id: 'cable-pushdown', title: 'Cable Rope Pushdown', target: 'Push', visual: 'https://images.unsplash.com/photo-1530822847156-5df684ec5ee1?w=400' },
+    { id: 'db-lunge', title: 'Dumbbell Lunges', target: 'Legs', visual: 'https://images.unsplash.com/photo-1575052814086-f385e2e2ad1b?w=400' },
+    { id: 'db-curl', title: 'Dumbbell Bicep Curls', target: 'Pull', visual: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=400' }, // Placeholder visual
+    { id: 'stair-climber', title: 'Gymost Stair Climber', target: 'Cardio', visual: 'https://images.unsplash.com/photo-1554284126-aa88f22d8b74?w=400' },
+    { id: 'treadmill', title: 'Treadmill', target: 'Cardio', visual: 'https://images.unsplash.com/photo-1576678927484-cc907957088c?w=400' }
   ];
 
   const currentDay = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(new Date());
 
   return (
-    <div className="min-h-screen bg-[#0B1120] text-slate-100 font-sans selection:bg-blue-500/30 overflow-x-hidden relative">
+    <div className="min-h-[100dvh] bg-[#0B1120] text-slate-100 font-sans selection:bg-blue-500/30 overflow-x-hidden relative">
       
       {/* Dynamic Header */}
       <header className="fixed top-0 left-0 right-0 bg-[#0B1120]/90 backdrop-blur-xl px-6 pt-12 pb-4 z-40 border-b border-slate-800/60 shadow-lg">
@@ -180,7 +187,7 @@ const App = () => {
         </div>
       </header>
 
-      {/* Main Content Area - Added top padding to account for fixed header and bottom padding for nav */}
+      {/* Main Content Area */}
       <main className="pt-32 pb-40 px-5 max-w-lg mx-auto space-y-8 relative z-0">
         
         {/* AI Scanner Result Card */}
